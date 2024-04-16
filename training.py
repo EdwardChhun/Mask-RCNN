@@ -59,10 +59,10 @@ def main():
     cfg.DATASETS.TEST = ("test_dataset",)
     cfg.DATALOADER.NUM_WORKERS = 2
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-    cfg.SOLVER.IMS_PER_BATCH = 2
-    cfg.SOLVER.BASE_LR = 0.00025
-    cfg.SOLVER.MAX_ITER = 20
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
+    cfg.SOLVER.IMS_PER_BATCH = 4
+    cfg.SOLVER.BASE_LR = 0.001
+    cfg.SOLVER.MAX_ITER = 100
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
 
     # Create output directory
@@ -73,14 +73,14 @@ def main():
     trainer.resume_or_load(resume=False)
     trainer.train()
 
-    # Create checkpoint
-    checkpointer = DetectionCheckpointer(trainer.model, save_dir=cfg.OUTPUT_DIR)
-    checkpointer.save("model_final")
+    #model_file = os.path.join(cfg.OUTPUT_DIR, "model.pth")
 
+    checkpointer = DetectionCheckpointer(trainer.model, save_dir=cfg.OUTPUT_DIR)
+    checkpointer.save("model_final2")
+
+    #trainer. save_model(model_file)
 
     # After training, perform evaluation
-
-    # Code is commented due to a COCO instance error, working on resolving it
     #evaluator = COCOEvaluator("test_dataset", output_dir=cfg.OUTPUT_DIR)
     #trainer.test(cfg, trainer.model, evaluators=[evaluator])
     #evaluator = COCOEvaluator("test_dataset", cfg, False, output_dir=cfg.OUTPUT_DIR)
@@ -92,15 +92,16 @@ def main():
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.1
     predictor = DefaultPredictor(cfg)
 
-    # Randomly select 3 images from the validation dataset for visualization
-    for d in random.sample(DatasetCatalog.get("test_dataset"), 3):
+    metadata = MetadataCatalog.get("train_dataset")
+
+    # Randomly select 30 images from the validation dataset for visualization
+    for d in random.sample(DatasetCatalog.get("test_dataset"), 30):
         im = cv2.imread(d["file_name"])
         outputs = predictor(im)
-        v = Visualizer(im[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), scale=0.25)
-        out = v.overlay_instances(boxes=outputs["instances"].pred_boxes.tensor.cpu().numpy(),
-                                  labels=outputs["instances"].pred_classes.cpu().numpy().tolist(),
-                                  alpha=0.5)
-        cv2.imshow("Prediction", out.get_image()[:, :, ::-1])
+        v = Visualizer(im[:, :, ::-1], metadata=metadata, scale=0.25)
+        v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+
+        cv2.imshow("prediction", v.get_image()[:, :, ::-1])
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
