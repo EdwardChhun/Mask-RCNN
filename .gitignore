@@ -1,0 +1,4 @@
+# Ignore auto-generated files/folders
+**/.DS_Store
+**/__pycache__/
+
