@@ -15,7 +15,8 @@ def main():
         3: visualizer.plot_classifier_loss,
         4: visualizer.plot_classifier_loss_from_rpn,
         5: visualizer.plot_total_loss,
-        6: exit
+        6: visualizer.plot_pos_neg_anchors,
+        7: exit
     }
 
     while True:
@@ -25,11 +26,12 @@ def main():
         print("\t3. Classifier Loss")
         print("\t4. Classifier Loss from RPN")
         print("\t5. Classifier Total Loss")
-        print("\t6. Quit")
-        choice = input("[1 - 6]: ")
+        print("\t6. Postive and Negative Anchors")
+        print("\t7. Quit")
+        choice = input("[1 - 7]: ")
         try:
             choice = int(choice)
-            if choice not in [1, 2, 3, 4, 5, 6]:
+            if choice not in [1, 2, 3, 4, 5, 6, 7]:
                 print("Invalid option, press Enter to try again")
                 input()
                 continue

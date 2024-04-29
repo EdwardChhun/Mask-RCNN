@@ -32,7 +32,7 @@ class Visualizer:
                     raise VisualizeError(f"Error while reading the JSON file: {e}")
 
 
-    def _generate_plot_over_iterations(self, *, y_axis: str, y_axis_title: str, title: str):
+    def _generate_plot_over_iterations(self, *, y_axis: str, y_axis_title: str, title: str) -> px.scatter:
         iterations = {}
         for metric in self._metrics:
             try:
@@ -83,4 +83,44 @@ class Visualizer:
         fig.show()
 
     def plot_pos_neg_anchors(self):
-        pass
+           iterations = {}
+           for metric in self._metrics:
+               try:
+                   iteration = metric["iteration"]
+                   num_pos_anchors = metric["rpn/num_pos_anchors"]
+                   num_neg_anchors = metric["rpn/num_neg_anchors"]
+                   total_anchors = num_pos_anchors + num_neg_anchors
+
+                   if iteration in iterations:
+                       iterations[iteration]["num_pos_anchors"].append(num_pos_anchors)
+                       iterations[iteration]["num_neg_anchors"].append(num_neg_anchors)
+                       iterations[iteration]["total_anchors"].append(total_anchors)
+                   else:
+                       iterations[iteration] = {
+                           "num_pos_anchors": [num_pos_anchors],
+                           "num_neg_anchors": [num_neg_anchors],
+                           "total_anchors": [total_anchors]
+                       }
+               except KeyError:
+                   # Some entries might not have the correct keys, these can be skipped
+                   pass
+
+           data = []
+           for iteration, values in iterations.items():
+               data.append({
+                   "Iteration": iteration,
+                   "Num_Pos_Anchors": sum(values["num_pos_anchors"]),
+                   "Num_Neg_Anchors": sum(values["num_neg_anchors"]),
+                   "Total_Anchors": sum(values["total_anchors"])
+               })
+
+           data_frame = DataFrame(data)
+
+           # Plot with Plotly
+           data_frame_melted = data_frame.melt(id_vars=["Iteration"],
+                                                       value_vars=["Num_Pos_Anchors", "Total_Anchors"],
+                                                       var_name="Anchor_Type", value_name="Anchors")
+           fig = px.scatter(data_frame_melted, x="Iteration", y="Anchors", color="Anchor_Type",
+                                title="Classifier Positive and Negative Anchors by Iteration",
+                                labels={"Anchors": "Anchors Count", "Iteration": "Iteration Number"})
+           fig.show()
