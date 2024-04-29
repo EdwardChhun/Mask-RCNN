@@ -32,7 +32,7 @@ class Visualizer:
                     raise VisualizeError(f"Error while reading the JSON file: {e}")
 
 
-    def _plot_over_iterations(self, *, y_axis: str, y_axis_title: str, title: str):
+    def _generate_plot_over_iterations(self, *, y_axis: str, y_axis_title: str, title: str):
         iterations = {}
         for metric in self._metrics:
             try:
@@ -50,29 +50,37 @@ class Visualizer:
 
         data_frame = DataFrame(data)
         fig = px.scatter(data_frame.explode(y_axis_title), x="Iteration", y=y_axis_title, title=title)
-        fig.show()
+        return fig
 
     def plot_fast_cls_accuracy(self):
-        self._plot_over_iterations(y_axis="fast_rcnn/cls_accuracy",
-                                   y_axis_title="Fast RCNN Classifier Accuracy",
-                                   title="Fast RCNN Classifier Accuracy by Iteration")
+        fig = self._generate_plot_over_iterations(y_axis="fast_rcnn/cls_accuracy",
+                                                  y_axis_title="Fast RCNN Classifier Accuracy",
+                                                  title="Fast RCNN Classifier Accuracy by Iteration")
+        fig.show()
 
     def plot_fast_false_negative(self):
-        self._plot_over_iterations(y_axis="fast_rcnn/false_negative",
-                                   y_axis_title="Fast RCNN Classifier False Negatives",
-                                   title="Fast RCNN Classifier False Negatives by Iteration")
+        fig = self._generate_plot_over_iterations(y_axis="fast_rcnn/false_negative",
+                                                  y_axis_title="Fast RCNN Classifier False Negatives",
+                                                  title="Fast RCNN Classifier False Negatives by Iteration")
+        fig.show()
 
     def plot_classifier_loss(self):
-        self._plot_over_iterations(y_axis="loss_cls",
-                                   y_axis_title="Classifier Loss",
-                                   title="Classifier Loss by Iteration")
+        fig = self._generate_plot_over_iterations(y_axis="loss_cls",
+                                                  y_axis_title="Classifier Loss",
+                                                  title="Classifier Loss by Iteration")
+        fig.show()
 
     def plot_classifier_loss_from_rpn(self):
-        self._plot_over_iterations(y_axis="loss_rpn_cls",
-                                   y_axis_title=" Classifier Loss from RPN",
-                                   title="Classifier Loss from RPN by Iteration")
+        fig = self._generate_plot_over_iterations(y_axis="loss_rpn_cls",
+                                                  y_axis_title=" Classifier Loss from RPN",
+                                                  title="Classifier Loss from RPN by Iteration")
+        fig.show()
 
     def plot_total_loss(self):
-        self._plot_over_iterations(y_axis="total_loss",
-                                   y_axis_title="Classifier Total Loss",
-                                   title="Classifier Total Loss by Iteration")
+        fig = self._generate_plot_over_iterations(y_axis="total_loss",
+                                                  y_axis_title="Classifier Total Loss",
+                                                  title="Classifier Total Loss by Iteration")
+        fig.show()
+
+    def plot_pos_neg_anchors(self):
+        pass
