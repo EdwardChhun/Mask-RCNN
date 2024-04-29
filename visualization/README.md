@@ -1,0 +1,5 @@
+### Setup
+
+1. Run `python -m venv .venv` to create a virtual environment.
+2. Run `source .venv/bin/activate` to activate the virtual environment.
+3. Run `pip install -r requirements.txt` to install the required packages.
