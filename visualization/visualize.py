@@ -32,30 +32,30 @@ class Visualizer:
                     raise VisualizeError(f"Error while reading the JSON file: {e}")
 
 
-    def _plot_over_iterations(self, data: List[Dict], *, y_axis: str, title: str):
-        data_frame = DataFrame(data)
-        fig = px.scatter(data_frame.explode(y_axis), x="Iteration", y=y_axis, title=title)
-        fig.show()
-
-    def plot_fast_cls_accuracy(self):
+    def _plot_over_iterations(self, *, y_axis: str, y_axis_title: str, title: str):
         iterations = {}
-        y_axis = "Fast RCNN CLS Accuracy"
-
         for metric in self._metrics:
             try:
                 if metric["iteration"] in iterations:
-                    iterations[metric["iteration"]].append(metric["fast_rcnn/cls_accuracy"])
+                    iterations[metric["iteration"]].append(metric[y_axis])
                 else:
-                    iterations[metric["iteration"]] = [metric["fast_rcnn/cls_accuracy"]]
+                    iterations[metric["iteration"]] = [metric[y_axis]]
             except KeyError:
                 # Some entries might not have the cls accuracy key
                 pass
 
         data = []
         for iteration, accuracy in iterations.items():
-            data.append({"Iteration": iteration, y_axis: accuracy})
+            data.append({"Iteration": iteration, y_axis_title: accuracy})
 
-        self._plot_over_iterations(data, y_axis=y_axis, title="Fast RCNN Classifier Accuracy")
+        data_frame = DataFrame(data)
+        fig = px.scatter(data_frame.explode(y_axis_title), x="Iteration", y=y_axis_title, title=title)
+        fig.show()
+
+    def plot_fast_cls_accuracy(self):
+        self._plot_over_iterations(y_axis="fast_rcnn/cls_accuracy",
+                                   y_axis_title="Fast RCNN Classifier Accuracy",
+                                   title="Fast RCNN Classifier Accuracy")
 
 
 
