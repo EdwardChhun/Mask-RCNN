@@ -41,7 +41,7 @@ class Visualizer:
                 else:
                     iterations[metric["iteration"]] = [metric[y_axis]]
             except KeyError:
-                # Some entries might not have the cls accuracy key
+                # Some entries might not have the correct key, these can be skipped
                 pass
 
         data = []
