@@ -1,4 +1,4 @@
 # Ignore auto-generated files/folders
 **/.DS_Store
 **/__pycache__/
-
+**/*venv
