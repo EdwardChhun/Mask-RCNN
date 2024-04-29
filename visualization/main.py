@@ -9,7 +9,7 @@ def main():
 
     visualizer = Visualizer(initial_input)
 
-    option_mapping = {
+    options_mapping = {
         1: visualizer.plot_fast_cls_accuracy,
         2: visualizer.plot_fast_false_negative,
         3: visualizer.plot_classifier_loss,
@@ -38,7 +38,7 @@ def main():
             input()
             continue
 
-        option_mapping[choice]()
+        options_mapping[choice]()
         print("Press Enter to continue")
         input()
 
