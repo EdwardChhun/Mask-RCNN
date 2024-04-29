@@ -1,8 +1,14 @@
+"""
+Main script to run the visualizer and provide options for plots to generate
+"""
 import contextlib
 from pandas.io.formats import printing
 from visualize import Visualizer, VisualizeError
 
 def main():
+    """
+    Main function to run the visualizer and provide options for plots to generate
+    """
     initial_input = input("Enter the path to the metrics file or 'q' to quit: ")
     if initial_input == 'q':
         exit()
