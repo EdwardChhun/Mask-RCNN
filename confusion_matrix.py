@@ -33,6 +33,8 @@ def plot_confusion_matrix(cm, classes,
                           normalize = False,
                           title = 'Confusion matrix',
                           cmap = plt.cm.Blues):
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis = 1)[:, np.newaxis]
 
     plt.figure(figsize = (8, 6))
     plt.imshow(cm, interpolation = 'nearest', cmap = cmap)
@@ -50,6 +52,9 @@ def plot_confusion_matrix(cm, classes,
 
     plt.tight_layout()
 
+
+cnf_matrix_normalized = confusion_matrix.astype('float') / confusion_matrix.sum(axis = 1)[:,
+                                                           np.newaxis]
 
 plot_confusion_matrix(confusion_matrix, classes = classes,
                       title = 'Confusion matrix, without normalization')
