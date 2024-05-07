@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 with open("annotations.json", "r") as f:
@@ -29,26 +30,27 @@ for prediction in predictions_data:
     predicted_category_id = prediction["category_id"]
     confusion_matrix[true_category_id, predicted_category_id] += 1
 
+
 def plot_confusion_matrix(cm, classes,
-                          normalize = False,
+                          normalize = True,
                           title = 'Confusion matrix',
-                          cmap = plt.cm.Blues):
+                          cmap = plt.cm.Blues,
+                          fontsize = 6,  # Adjust font size here
+                          figsize = (10, 8)):  # Adjust figure size here
+    
     if normalize:
         cm = cm.astype('float') / cm.sum(axis = 1)[:, np.newaxis]
 
-    plt.figure(figsize = (8, 6))
+    plt.figure(figsize = figsize)  # Set figure size
     plt.imshow(cm, interpolation = 'nearest', cmap = cmap)
     plt.title(title)
     plt.colorbar()
-
     tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation = 45, fontsize = 8)
-    plt.yticks(tick_marks, classes, fontsize = 8)
-
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-
-    plt.gca().set_xticklabels(classes, rotation = 90, va = 'top', ha = 'center', fontsize = 6)
+    plt.xticks(tick_marks, classes, rotation = 90,
+               fontsize = fontsize)  # Rotate x-axis labels vertically
+    plt.yticks(tick_marks, classes, fontsize = fontsize)  # Adjust font size for y-axis labels
+    plt.xlabel('Predicted label', fontsize = fontsize)  # Adjust font size for x-axis label
+    plt.ylabel('True label', fontsize = fontsize)  # Adjust font size for y-axis label
 
     plt.tight_layout()
 
@@ -56,7 +58,8 @@ def plot_confusion_matrix(cm, classes,
 cnf_matrix_normalized = confusion_matrix.astype('float') / confusion_matrix.sum(axis = 1)[:,
                                                            np.newaxis]
 
-plot_confusion_matrix(confusion_matrix, classes = classes,
-                      title = 'Confusion matrix, without normalization')
+plt.figure()
+plot_confusion_matrix(cnf_matrix_normalized, classes = classes, normalize = True,
+                      title = 'Normalized confusion matrix')
 
 plt.show()
