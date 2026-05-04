@@ -38,29 +38,76 @@ class AugmentedTrainer(DefaultTrainer):
                     T.RandomBrightness(0.8, 1.2),
                     T.RandomContrast(0.8, 1.2),
                     T.ResizeShortestEdge(
-                        [640, 672, 704, 736, 768, 800], max_size=1333
+                        [640, 672, 704, 736, 768, 800],
+                        max_size=1333,
+                        sample_style="choice",
                     ),
                 ],
             ),
         )
 
 
+TACO_DATA_DIR = "/Users/dr.chhunry/Desktop/Developer/TACO_repo/data"
+TACO_ANNOTATIONS_SRC = os.path.join(TACO_DATA_DIR, "annotations.json")
+TACO_ANNOTATIONS_FIXED = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "annotations_taco_fixed.json"
+)
+
+
+def fix_taco_annotations(src_path, dst_path):
+    """TACO's annotations.json has duplicate annotation ids and category ids
+    that aren't contiguous from 1..N. Detectron2's COCO loader rejects the
+    duplicates outright. Reassign both id sets and write a fixed copy."""
+    with open(src_path, "r") as f:
+        data = json.load(f)
+
+    # Remap category ids to 1..N (preserve relative order from source)
+    cat_id_map = {}
+    for new_id, cat in enumerate(data["categories"], start=1):
+        cat_id_map[cat["id"]] = new_id
+        cat["id"] = new_id
+
+    # Reassign annotation ids sequentially and remap category_id
+    for new_id, ann in enumerate(data["annotations"], start=1):
+        ann["id"] = new_id
+        ann["category_id"] = cat_id_map[ann["category_id"]]
+
+    with open(dst_path, "w") as f:
+        json.dump(data, f)
+
+
 def main():
     # Fix seed for reproducible train/test split
     random.seed(42)
 
+    # Rebuild the fixed annotations file if missing or stale
+    if (not os.path.exists(TACO_ANNOTATIONS_FIXED)
+            or os.path.getmtime(TACO_ANNOTATIONS_FIXED)
+            < os.path.getmtime(TACO_ANNOTATIONS_SRC)):
+        print(f"Writing deduped annotations to {TACO_ANNOTATIONS_FIXED}")
+        fix_taco_annotations(TACO_ANNOTATIONS_SRC, TACO_ANNOTATIONS_FIXED)
+
     # Register the full COCO-format dataset
-    register_coco_instances("custom_dataset", {}, "annotations.json", "TACO_Raw")
+    register_coco_instances(
+        "custom_dataset", {},
+        TACO_ANNOTATIONS_FIXED,
+        TACO_DATA_DIR,
+    )
 
     dataset = DatasetCatalog.get("custom_dataset")
+
+    # Filter to only images that were successfully downloaded
+    dataset = [d for d in dataset if os.path.exists(d["file_name"])]
+    print(f"Using {len(dataset)} images with files present on disk.")
+
     random.shuffle(dataset)
 
     split_idx = int(len(dataset) * 0.8)  # 80/20 train/test
     train_dataset = dataset[:split_idx]
     test_dataset = dataset[split_idx:]
 
-    # Extract class names and count from the annotation file
-    with open("annotations.json", "r") as f:
+    # Extract class names and count from the fixed annotation file
+    with open(TACO_ANNOTATIONS_FIXED, "r") as f:
         annotations = json.load(f)
 
     class_names = [category["name"] for category in annotations["categories"]]
