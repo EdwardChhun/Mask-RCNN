@@ -1,65 +1,123 @@
+"""Build a per-instance confusion matrix from COCO predictions vs ground truth.
+
+Matches each ground-truth annotation to the highest-IoU prediction in the same
+image (IoU >= 0.5). Unmatched GT instances are counted as predicted-as-background;
+unmatched predictions are counted as false positives against background. The
+result is saved as a normalized heatmap PNG.
+"""
+
 import json
+import os
+from collections import defaultdict
+
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 
-with open("annotations.json", "r") as f:
-    annotations_data = json.load(f)
-
-with open("coco_instances_results.json", "r") as f:
-    predictions_data = json.load(f)
-
-true_categories = {}
-for annotation in annotations_data["annotations"]:
-    image_id = annotation["image_id"]
-    category_id = annotation["category_id"]
-    true_categories[image_id] = category_id
-
-classes = [category["name"] for category in annotations_data["categories"]]
-num_classes = len(classes)
-confusion_matrix = np.zeros((num_classes, num_classes))
-
-for prediction in predictions_data:
-    image_id = prediction["image_id"]
-    true_category_id = true_categories.get(image_id)
-
-    if true_category_id is None:
-        continue
-
-    predicted_category_id = prediction["category_id"]
-    confusion_matrix[true_category_id, predicted_category_id] += 1
+IOU_THRESHOLD = 0.5
 
 
-def plot_confusion_matrix(cm, classes,
-                          normalize = True,
-                          title = 'Confusion matrix',
-                          cmap = plt.cm.Blues,
-                          fontsize = 6,  # Adjust font size here
-                          figsize = (10, 8)):  # Adjust figure size here
-    
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis = 1)[:, np.newaxis]
-
-    plt.figure(figsize = figsize)  # Set figure size
-    plt.imshow(cm, interpolation = 'nearest', cmap = cmap)
-    plt.title(title)
-    plt.colorbar()
-    tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation = 90,
-               fontsize = fontsize)  # Rotate x-axis labels vertically
-    plt.yticks(tick_marks, classes, fontsize = fontsize)  # Adjust font size for y-axis labels
-    plt.xlabel('Predicted label', fontsize = fontsize)  # Adjust font size for x-axis label
-    plt.ylabel('True label', fontsize = fontsize)  # Adjust font size for y-axis label
-
-    plt.tight_layout()
+def _bbox_iou(a, b):
+    """COCO bbox format: [x, y, w, h]. Returns IoU."""
+    ax1, ay1, aw, ah = a
+    bx1, by1, bw, bh = b
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    union = aw * ah + bw * bh - inter
+    return inter / union if union > 0 else 0.0
 
 
-cnf_matrix_normalized = confusion_matrix.astype('float') / confusion_matrix.sum(axis = 1)[:,
-                                                           np.newaxis]
+def build_confusion_matrix(predictions_json, annotations_json, output_path):
+    with open(annotations_json, "r") as f:
+        ann_data = json.load(f)
+    with open(predictions_json, "r") as f:
+        preds = json.load(f)
 
-plt.figure()
-plot_confusion_matrix(cnf_matrix_normalized, classes = classes, normalize = True,
-                      title = 'Normalized confusion matrix')
+    classes = [c["name"] for c in ann_data["categories"]]
+    # category_id 1..N maps to row/col 0..N-1; last row/col is "background"
+    cat_id_to_idx = {c["id"]: i for i, c in enumerate(ann_data["categories"])}
+    n = len(classes)
+    bg = n  # background index
+    cm = np.zeros((n + 1, n + 1), dtype=np.int64)
 
-plt.show()
+    gts_by_img = defaultdict(list)
+    for ann in ann_data["annotations"]:
+        gts_by_img[ann["image_id"]].append(ann)
+
+    preds_by_img = defaultdict(list)
+    for p in preds:
+        preds_by_img[p["image_id"]].append(p)
+
+    for image_id, gts in gts_by_img.items():
+        ps = preds_by_img.get(image_id, [])
+        # Greedy 1-to-1 match: for each GT take the best-IoU unmatched prediction.
+        used_pred = set()
+        gt_matched = [False] * len(gts)
+        # Sort GTs by area desc so big objects get first dibs on predictions.
+        gt_order = sorted(range(len(gts)), key=lambda i: -gts[i].get("area", 0))
+        for gi in gt_order:
+            gt = gts[gi]
+            gt_idx = cat_id_to_idx.get(gt["category_id"])
+            if gt_idx is None:
+                continue
+            best_iou, best_pi = 0.0, -1
+            for pi, p in enumerate(ps):
+                if pi in used_pred:
+                    continue
+                iou = _bbox_iou(gt["bbox"], p["bbox"])
+                if iou > best_iou:
+                    best_iou, best_pi = iou, pi
+            if best_pi >= 0 and best_iou >= IOU_THRESHOLD:
+                pred_idx = cat_id_to_idx.get(ps[best_pi]["category_id"], bg)
+                cm[gt_idx, pred_idx] += 1
+                used_pred.add(best_pi)
+                gt_matched[gi] = True
+            else:
+                cm[gt_idx, bg] += 1   # missed detection
+        # Remaining unmatched predictions are false positives.
+        for pi, p in enumerate(ps):
+            if pi in used_pred:
+                continue
+            pred_idx = cat_id_to_idx.get(p["category_id"], bg)
+            cm[bg, pred_idx] += 1
+
+    labels = classes + ["(background)"]
+    _plot_and_save(cm, labels, output_path)
+    return cm
+
+
+def _plot_and_save(cm, labels, output_path, fontsize=5, figsize=(12, 10)):
+    row_sums = cm.sum(axis=1, keepdims=True)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        norm = np.where(row_sums > 0, cm / row_sums, 0.0)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    im = ax.imshow(norm, interpolation="nearest", cmap=plt.cm.Blues)
+    ax.set_title(f"Normalized confusion matrix (IoU >= {IOU_THRESHOLD})")
+    fig.colorbar(im, ax=ax)
+    ticks = np.arange(len(labels))
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+    ax.set_xticklabels(labels, rotation=90, fontsize=fontsize)
+    ax.set_yticklabels(labels, fontsize=fontsize)
+    ax.set_xlabel("Predicted", fontsize=fontsize + 2)
+    ax.set_ylabel("True", fontsize=fontsize + 2)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--predictions", default="output/coco_instances_results.json")
+    p.add_argument("--annotations", default="annotations_taco_fixed.json")
+    p.add_argument("--output", default="output/report/confusion_matrix.png")
+    args = p.parse_args()
+    build_confusion_matrix(args.predictions, args.annotations, args.output)
+    print(f"Wrote {args.output}")

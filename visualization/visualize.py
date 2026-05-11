@@ -44,6 +44,28 @@ class Visualizer:
                     raise VisualizeError(f"Error while reading the JSON file: {e}")
 
 
+    def iter_figures(self):
+        """Yield (name, plotly.Figure) tuples for every available plot.
+
+        Each figure is built fresh; if a metric key is missing from metrics.json
+        the entry is skipped. Used by training.py to save loss curves as PNGs
+        without opening interactive windows.
+        """
+        specs = [
+            ("total_loss", "total_loss", "Total Loss"),
+            ("loss_cls", "loss_cls", "Classifier Loss"),
+            ("loss_rpn_cls", "loss_rpn_cls", "RPN Classifier Loss"),
+            ("fast_rcnn_cls_accuracy", "fast_rcnn/cls_accuracy", "Fast R-CNN Classifier Accuracy"),
+            ("fast_rcnn_false_negative", "fast_rcnn/false_negative", "Fast R-CNN False Negatives"),
+        ]
+        for name, key, title in specs:
+            if not any(key in m for m in self._metrics):
+                continue
+            fig = self._generate_plot_over_iterations(
+                y_axis=key, y_axis_title=title, title=f"{title} by Iteration",
+            )
+            yield name, fig
+
     def _generate_plot_over_iterations(self, *, y_axis: str, y_axis_title: str, title: str) -> px.scatter:
         """
         Generate a plot over iterations for a given y_axis

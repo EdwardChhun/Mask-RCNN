@@ -1,5 +1,7 @@
 import os
 import random
+import sys
+import time
 import cv2
 import torch
 import torchvision
@@ -47,7 +49,10 @@ class AugmentedTrainer(DefaultTrainer):
         )
 
 
-TACO_DATA_DIR = "/Users/dr.chhunry/Desktop/Developer/TACO_repo/data"
+TACO_DATA_DIR = os.environ.get(
+    "TACO_DATA_DIR",
+    r"C:\Developer\TACO_repo\data",
+)
 TACO_ANNOTATIONS_SRC = os.path.join(TACO_DATA_DIR, "annotations.json")
 TACO_ANNOTATIONS_FIXED = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "annotations_taco_fixed.json"
@@ -155,7 +160,9 @@ def main():
     # ----------------------------------------------------------------- training
     trainer = AugmentedTrainer(cfg)
     trainer.resume_or_load(resume=False)
+    train_start = time.time()
     trainer.train()
+    train_seconds = time.time() - train_start
 
     # Save final checkpoint explicitly
     checkpointer = DetectionCheckpointer(trainer.model, save_dir=cfg.OUTPUT_DIR)
@@ -164,7 +171,45 @@ def main():
     # --------------------------------------------------------------- evaluation
     evaluator = COCOEvaluator("test_dataset", output_dir=cfg.OUTPUT_DIR)
     val_loader = build_detection_test_loader(cfg, "test_dataset")
-    inference_on_dataset(trainer.model, val_loader, evaluator)
+    eval_results = inference_on_dataset(trainer.model, val_loader, evaluator)
+
+    # ----------------------------------------------------------- report assets
+    report_dir = os.path.join(cfg.OUTPUT_DIR, "report")
+    os.makedirs(report_dir, exist_ok=True)
+
+    with open(os.path.join(report_dir, "coco_metrics.json"), "w") as f:
+        json.dump(eval_results, f, indent=2, default=str)
+
+    write_summary(
+        os.path.join(report_dir, "summary.txt"),
+        eval_results=eval_results,
+        train_seconds=train_seconds,
+        num_train=len(train_dataset),
+        num_test=len(test_dataset),
+        num_classes=num_classes,
+        device=cfg.MODEL.DEVICE,
+    )
+
+    # Loss curves from detectron2's metrics.json (JSONL written during training)
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "visualization"))
+        from visualize import Visualizer as MetricsVisualizer
+        mv = MetricsVisualizer(os.path.join(cfg.OUTPUT_DIR, "metrics.json"))
+        for name, fig in mv.iter_figures():
+            fig.write_image(os.path.join(report_dir, f"{name}.png"))
+    except Exception as e:
+        print(f"[report] loss-curve generation skipped: {e}")
+
+    # Confusion matrix (uses coco_instances_results.json written by evaluator)
+    try:
+        from confusion_matrix import build_confusion_matrix
+        build_confusion_matrix(
+            predictions_json=os.path.join(cfg.OUTPUT_DIR, "coco_instances_results.json"),
+            annotations_json=TACO_ANNOTATIONS_FIXED,
+            output_path=os.path.join(report_dir, "confusion_matrix.png"),
+        )
+    except Exception as e:
+        print(f"[report] confusion matrix skipped: {e}")
 
     # ------------------------------------------------------------ visualisation
     cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")
@@ -172,17 +217,57 @@ def main():
     predictor = DefaultPredictor(cfg)
 
     metadata = MetadataCatalog.get("train_dataset")
+    show_previews = bool(os.environ.get("SHOW_PREVIEWS"))
+    preds_dir = os.path.join(report_dir, "predictions")
+    os.makedirs(preds_dir, exist_ok=True)
 
-    for d in random.sample(
-        DatasetCatalog.get("test_dataset"), min(30, len(test_dataset))
-    ):
+    sample = random.sample(
+        DatasetCatalog.get("test_dataset"), min(10, len(test_dataset))
+    )
+    for i, d in enumerate(sample):
         im = cv2.imread(d["file_name"])
         outputs = predictor(im)
-        v = Visualizer(im[:, :, ::-1], metadata=metadata, scale=0.25)
+        v = Visualizer(im[:, :, ::-1], metadata=metadata, scale=0.5)
         v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-        cv2.imshow("prediction", v.get_image()[:, :, ::-1])
-        cv2.waitKey(0)
+        out_bgr = v.get_image()[:, :, ::-1]
+        cv2.imwrite(os.path.join(preds_dir, f"{i:02d}.jpg"), out_bgr)
+        if show_previews:
+            cv2.imshow("prediction", out_bgr)
+            cv2.waitKey(0)
+    if show_previews:
         cv2.destroyAllWindows()
+
+    print(f"\nReport written to {report_dir}")
+
+
+def write_summary(path, *, eval_results, train_seconds, num_train,
+                  num_test, num_classes, device):
+    """Write a human-readable summary of training + evaluation."""
+    def fmt_seconds(s):
+        h, rem = divmod(int(s), 3600)
+        m, sec = divmod(rem, 60)
+        return f"{h:d}h {m:02d}m {sec:02d}s"
+
+    lines = []
+    lines.append("Mask R-CNN training summary")
+    lines.append("=" * 40)
+    lines.append(f"Device:           {device}")
+    lines.append(f"Train images:     {num_train}")
+    lines.append(f"Test images:      {num_test}")
+    lines.append(f"Classes:          {num_classes}")
+    lines.append(f"Training time:    {fmt_seconds(train_seconds)}")
+    lines.append("")
+    for task in ("bbox", "segm"):
+        if task not in eval_results:
+            continue
+        m = eval_results[task]
+        lines.append(f"[{task}]")
+        for k in ("AP", "AP50", "AP75", "APs", "APm", "APl"):
+            if k in m:
+                lines.append(f"  {k:<6} {m[k]:.3f}")
+        lines.append("")
+    with open(path, "w") as f:
+        f.write("\n".join(lines))
 
 
 if __name__ == "__main__":
