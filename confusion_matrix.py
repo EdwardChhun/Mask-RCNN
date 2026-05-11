@@ -1,65 +1,105 @@
-import json
-import numpy as np
+"""Replot the confusion matrix that evaluation.py has already saved.
+
+The heavy lifting (IoU-matched instance assignment, counts) lives in
+evaluation.py — this script just reloads eval/confusion_matrix_counts.csv
+and re-renders the PNG with whatever knobs you want to tweak.
+
+Usage:
+    python confusion_matrix.py              # full 63x63 plot
+    python confusion_matrix.py --top 20     # only the 20 most-supported classes
+"""
+
+import argparse
+import csv
+import os
+
+import matplotlib
+
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
-
-with open("annotations.json", "r") as f:
-    annotations_data = json.load(f)
-
-with open("coco_instances_results.json", "r") as f:
-    predictions_data = json.load(f)
-
-true_categories = {}
-for annotation in annotations_data["annotations"]:
-    image_id = annotation["image_id"]
-    category_id = annotation["category_id"]
-    true_categories[image_id] = category_id
-
-classes = [category["name"] for category in annotations_data["categories"]]
-num_classes = len(classes)
-confusion_matrix = np.zeros((num_classes, num_classes))
-
-for prediction in predictions_data:
-    image_id = prediction["image_id"]
-    true_category_id = true_categories.get(image_id)
-
-    if true_category_id is None:
-        continue
-
-    predicted_category_id = prediction["category_id"]
-    confusion_matrix[true_category_id, predicted_category_id] += 1
+ROOT = os.path.dirname(os.path.abspath(__file__))
+EVAL_DIR = os.path.join(ROOT, "eval")
+COUNTS_CSV = os.path.join(EVAL_DIR, "confusion_matrix_counts.csv")
 
 
-def plot_confusion_matrix(cm, classes,
-                          normalize = True,
-                          title = 'Confusion matrix',
-                          cmap = plt.cm.Blues,
-                          fontsize = 6,  # Adjust font size here
-                          figsize = (10, 8)):  # Adjust figure size here
-    
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis = 1)[:, np.newaxis]
+def load_counts(path):
+    with open(path, newline="") as f:
+        rows = list(csv.reader(f))
+    labels = rows[0][1:]
+    cm = np.array([[int(x) for x in r[1:]] for r in rows[1:]], dtype=np.int64)
+    return cm, labels
 
-    plt.figure(figsize = figsize)  # Set figure size
-    plt.imshow(cm, interpolation = 'nearest', cmap = cmap)
+
+def plot(cm, labels, out_path, title):
+    cm = cm.astype(float)
+    row_sums = cm.sum(axis=1, keepdims=True)
+    norm = np.divide(cm, row_sums, out=np.zeros_like(cm), where=row_sums > 0)
+
+    side = max(8, len(labels) * 0.25)
+    plt.figure(figsize=(side, side * 0.85))
+    sns.heatmap(
+        norm,
+        xticklabels=labels,
+        yticklabels=labels,
+        cmap="Blues",
+        vmin=0.0,
+        vmax=1.0,
+        cbar_kws={"label": "fraction of GT row"},
+    )
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
     plt.title(title)
-    plt.colorbar()
-    tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation = 90,
-               fontsize = fontsize)  # Rotate x-axis labels vertically
-    plt.yticks(tick_marks, classes, fontsize = fontsize)  # Adjust font size for y-axis labels
-    plt.xlabel('Predicted label', fontsize = fontsize)  # Adjust font size for x-axis label
-    plt.ylabel('True label', fontsize = fontsize)  # Adjust font size for y-axis label
-
+    plt.xticks(rotation=90, fontsize=6)
+    plt.yticks(rotation=0, fontsize=6)
     plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
+    print(f"Saved {out_path}")
 
 
-cnf_matrix_normalized = confusion_matrix.astype('float') / confusion_matrix.sum(axis = 1)[:,
-                                                           np.newaxis]
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=0,
+        help="If >0, restrict plot to the N most-supported true classes.",
+    )
+    parser.add_argument(
+        "--out",
+        default=None,
+        help="Output PNG path (default: eval/confusion_matrix[_topN].png)",
+    )
+    args = parser.parse_args()
 
-plt.figure()
-plot_confusion_matrix(cnf_matrix_normalized, classes = classes, normalize = True,
-                      title = 'Normalized confusion matrix')
+    if not os.path.exists(COUNTS_CSV):
+        raise SystemExit(
+            f"Missing {COUNTS_CSV}. Run `python evaluation.py` first."
+        )
 
-plt.show()
+    cm, labels = load_counts(COUNTS_CSV)
+
+    if args.top > 0:
+        # Last row/col is __background__; rank true classes by GT support.
+        gt_supports = cm[:-1, :].sum(axis=1)
+        top_idx = np.argsort(-gt_supports)[: args.top]
+        keep = list(top_idx) + [len(labels) - 1]
+        cm = cm[np.ix_(keep, keep)]
+        labels = [labels[i] for i in keep]
+        out_path = args.out or os.path.join(
+            EVAL_DIR, f"confusion_matrix_top{args.top}.png"
+        )
+        title = f"Confusion matrix — top {args.top} classes"
+    else:
+        out_path = args.out or os.path.join(EVAL_DIR, "confusion_matrix.png")
+        title = "Normalized confusion matrix"
+
+    plot(cm, labels, out_path, title)
+
+
+if __name__ == "__main__":
+    main()

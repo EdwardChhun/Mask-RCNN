@@ -25,6 +25,20 @@ pip install detectron2   # follow https://detectron2.readthedocs.io/en/latest/tu
 pip install opencv-python
 ```
 
+**Training on an NVIDIA GPU (recommended):** see [SETUP_CUDA_WINDOWS.md](SETUP_CUDA_WINDOWS.md) for a full Windows + CUDA walkthrough. CPU training takes ~12 hours; a mid-range GPU finishes in 15–30 min.
+
+## Dataset location
+
+`training.py` and `evaluation.py` read the TACO dataset path from the `TACO_DATA_DIR` environment variable, falling back to a hardcoded Mac path. Set it before running on a new machine:
+
+```bash
+# macOS / Linux
+export TACO_DATA_DIR=/path/to/TACO_repo/data
+
+# Windows PowerShell
+$env:TACO_DATA_DIR = "C:\path\to\TACO_repo\data"
+```
+
 ## Training
 
 ```bash

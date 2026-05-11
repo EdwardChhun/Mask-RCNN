@@ -1,14 +1,12 @@
 import os
 import random
-import cv2
 import torch
 import torchvision
 from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.engine import DefaultTrainer, DefaultPredictor
+from detectron2.engine import DefaultTrainer
 from detectron2.config import get_cfg
 from detectron2 import model_zoo
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-from detectron2.utils.visualizer import Visualizer, ColorMode
 from detectron2.data import (
     DatasetCatalog, MetadataCatalog,
     build_detection_test_loader, build_detection_train_loader,
@@ -47,7 +45,10 @@ class AugmentedTrainer(DefaultTrainer):
         )
 
 
-TACO_DATA_DIR = "/Users/dr.chhunry/Desktop/Developer/TACO_repo/data"
+TACO_DATA_DIR = os.environ.get(
+    "TACO_DATA_DIR",
+    "/Users/dr.chhunry/Desktop/Developer/TACO_repo/data",
+)
 TACO_ANNOTATIONS_SRC = os.path.join(TACO_DATA_DIR, "annotations.json")
 TACO_ANNOTATIONS_FIXED = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "annotations_taco_fixed.json"
@@ -154,7 +155,7 @@ def main():
 
     # ----------------------------------------------------------------- training
     trainer = AugmentedTrainer(cfg)
-    trainer.resume_or_load(resume=False)
+    trainer.resume_or_load(resume=True)
     trainer.train()
 
     # Save final checkpoint explicitly
@@ -164,25 +165,12 @@ def main():
     # --------------------------------------------------------------- evaluation
     evaluator = COCOEvaluator("test_dataset", output_dir=cfg.OUTPUT_DIR)
     val_loader = build_detection_test_loader(cfg, "test_dataset")
-    inference_on_dataset(trainer.model, val_loader, evaluator)
+    results = inference_on_dataset(trainer.model, val_loader, evaluator)
 
-    # ------------------------------------------------------------ visualisation
-    cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5   # was 0.1 — too noisy
-    predictor = DefaultPredictor(cfg)
-
-    metadata = MetadataCatalog.get("train_dataset")
-
-    for d in random.sample(
-        DatasetCatalog.get("test_dataset"), min(30, len(test_dataset))
-    ):
-        im = cv2.imread(d["file_name"])
-        outputs = predictor(im)
-        v = Visualizer(im[:, :, ::-1], metadata=metadata, scale=0.25)
-        v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-        cv2.imshow("prediction", v.get_image()[:, :, ::-1])
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    summary_path = os.path.join(cfg.OUTPUT_DIR, "evaluation_summary.json")
+    with open(summary_path, "w") as f:
+        json.dump(results, f, indent=2, default=str)
+    print(f"Wrote evaluation summary to {summary_path}")
 
 
 if __name__ == "__main__":
